@@ -130,9 +130,7 @@ client.on('ready', () => {
 client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.content.startsWith(PREFIX)) return;
 
-  if (message.guild && !message.channel.nsfw) {
-    return message.reply('⚠️ This command only works in **NSFW channels**.');
-  }
+  // Tinanggal na yung NSFW channel check
 
   const args = message.content.slice(PREFIX.length).trim().toLowerCase().split(/ +/);
   const command = args[0];
@@ -155,7 +153,7 @@ client.on('messageCreate', async (message) => {
       components: [row]
     });
 
-    // Collector
+    // Collector - every click = NEW message
     const collector = sentMessage.createMessageComponentCollector({
       componentType: ComponentType.Button,
       time: 180_000 // 3 minutes
@@ -166,7 +164,6 @@ client.on('messageCreate', async (message) => {
 
       await interaction.deferUpdate();
 
-      // send a NEW message with new media
       const newMedia = await getRandomMedia(command);
       if (!newMedia) {
         return interaction.followUp({ content: 'Failed to load more.', ephemeral: true });
@@ -175,6 +172,7 @@ client.on('messageCreate', async (message) => {
       const newEmbed = createEmbed(newMedia, message.author.username);
       const newRow = createRow();
 
+      // BAGONG MESSAGE every click
       await message.channel.send({
         embeds: [newEmbed],
         components: [newRow]
