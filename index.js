@@ -29,34 +29,38 @@ const COMMANDS = {
     title: 'Sex',
     sources: [
       () => fetchPurr('fuck'),
-      () => fetchPurr('anal'),
-      () => fetchPurr('blowjob')
+      () => fetchNSFW('anal'),
+      () => fetchNSFW('blowjob'),
+      () => fetchPurr('anal')
     ]
   },
   anal: {
     title: 'Anal',
     sources: [
+      () => fetchNSFW('anal'),
       () => fetchPurr('anal')
     ]
   },
   blowjob: {
     title: 'Blowjob',
     sources: [
+      () => fetchNSFW('blowjob'),
       () => fetchPurr('blowjob')
     ]
   },
   hentai: {
     title: 'Hentai',
     sources: [
+      () => fetchNSFW('hentai'),
       () => fetchPurr('neko'),
-      () => fetchPurr('fuck'),
-      () => fetchPurr('anal')
+      () => fetchPurr('fuck')
     ]
   },
   doggystyle: {
     title: 'Doggystyle',
     sources: [
       () => fetchPurr('fuck'),
+      () => fetchNSFW('anal'),
       () => fetchPurr('anal')
     ]
   }
@@ -65,13 +69,31 @@ const COMMANDS = {
 async function fetchPurr(category) {
   try {
     const res = await axios.get(`https://api.purrbot.site/v2/img/nsfw/${category}/gif`, {
-      timeout: 10000
+      timeout: 10000,
+      headers: { 'User-Agent': 'Mozilla/5.0' }
     });
     if (res.data?.link) {
+      console.log(`[PurrBot] Got: ${res.data.link}`);
       return res.data.link;
     }
   } catch (e) {
-    console.error(`PurrBot error (${category}):`, e.message);
+    console.error(`[PurrBot Error] ${category}:`, e.message);
+  }
+  return null;
+}
+
+async function fetchNSFW(category) {
+  try {
+    const res = await axios.get(`https://api.n-sfw.com/nsfw/${category}`, {
+      timeout: 10000,
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    if (res.data?.url) {
+      console.log(`[n-sfw] Got: ${res.data.url}`);
+      return res.data.url;
+    }
+  } catch (e) {
+    console.error(`[n-sfw Error] ${category}:`, e.message);
   }
   return null;
 }
@@ -91,19 +113,24 @@ async function getRandomMedia(command) {
 
 async function sendMedia(channel, media, requester) {
   try {
-    // Download the GIF first
+    console.log(`Downloading: ${media.url}`);
+
     const response = await axios.get(media.url, {
       responseType: 'arraybuffer',
-      timeout: 15000
+      timeout: 20000,
+      headers: { 'User-Agent': 'Mozilla/5.0' }
     });
 
     const buffer = Buffer.from(response.data);
-    const attachment = new AttachmentBuilder(buffer, { name: 'nsfw.gif' });
+    const isGif = media.url.includes('.gif');
+    const filename = isGif ? 'nsfw.gif' : 'nsfw.jpg';
+
+    const attachment = new AttachmentBuilder(buffer, { name: filename });
 
     const embed = new EmbedBuilder()
       .setColor(0xff0066)
       .setTitle(media.title)
-      .setImage('attachment://nsfw.gif')
+      .setImage(`attachment://${filename}`)
       .setFooter({ text: `Requested by ${requester}` })
       .setTimestamp();
 
@@ -122,14 +149,27 @@ async function sendMedia(channel, media, requester) {
     });
   } catch (err) {
     console.error('Send media error:', err.message);
-    // fallback: send link only
+    
+    // Fallback: send as link
     const embed = new EmbedBuilder()
       .setColor(0xff0066)
       .setTitle(media.title)
-      .setDescription(`[Click to view](${media.url})`)
+      .setDescription(`[View Media](${media.url})`)
+      .setImage(media.url)
       .setFooter({ text: `Requested by ${requester}` });
 
-    return await channel.send({ embeds: [embed] });
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('load_more')
+        .setLabel('Load More')
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji('🔄')
+    );
+
+    return await channel.send({
+      embeds: [embed],
+      components: [row]
+    });
   }
 }
 
@@ -150,17 +190,20 @@ client.on('messageCreate', async (message) => {
 
   if (!COMMANDS[command]) return;
 
+  console.log(`Command received: .${command} from ${message.author.tag}`);
+
   try {
     await message.channel.sendTyping();
 
     const media = await getRandomMedia(command);
     if (!media) {
+      console.log('No media found');
       return message.reply('Failed to fetch media. Try again.');
     }
 
+    console.log(`Media found: ${media.url}`);
     const sentMessage = await sendMedia(message.channel, media, message.author.username);
 
-    // Collector for Load More
     const collector = sentMessage.createMessageComponentCollector({
       componentType: ComponentType.Button,
       time: 180_000
@@ -170,13 +213,13 @@ client.on('messageCreate', async (message) => {
       if (interaction.customId !== 'load_more') return;
 
       await interaction.deferUpdate();
+      console.log(`Load More clicked by ${interaction.user.tag}`);
 
       const newMedia = await getRandomMedia(command);
       if (!newMedia) {
         return interaction.followUp({ content: 'Failed to load more.', ephemeral: true });
       }
 
-      // BAGONG MESSAGE every click
       await sendMedia(message.channel, newMedia, message.author.username);
     });
 
@@ -195,7 +238,7 @@ client.on('messageCreate', async (message) => {
     });
 
   } catch (err) {
-    console.error(err);
+    console.error('Main error:', err);
     message.reply('Something went wrong while fetching.');
   }
 });
