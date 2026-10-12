@@ -7,6 +7,7 @@ const {
   ButtonBuilder, 
   ButtonStyle,
   ComponentType,
+  AttachmentBuilder,
   Partials 
 } = require('discord.js');
 const axios = require('axios');
@@ -64,7 +65,7 @@ const COMMANDS = {
 async function fetchPurr(category) {
   try {
     const res = await axios.get(`https://api.purrbot.site/v2/img/nsfw/${category}/gif`, {
-      timeout: 8000
+      timeout: 10000
     });
     if (res.data?.link) {
       return res.data.link;
@@ -88,23 +89,48 @@ async function getRandomMedia(command) {
   return null;
 }
 
-function createEmbed(media, requester) {
-  return new EmbedBuilder()
-    .setColor(0xff0066)
-    .setTitle(media.title)
-    .setImage(media.url)
-    .setFooter({ text: `Requested by ${requester}` })
-    .setTimestamp();
-}
+async function sendMedia(channel, media, requester) {
+  try {
+    // Download the GIF first
+    const response = await axios.get(media.url, {
+      responseType: 'arraybuffer',
+      timeout: 15000
+    });
 
-function createRow() {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('load_more')
-      .setLabel('Load More')
-      .setStyle(ButtonStyle.Primary)
-      .setEmoji('🔄')
-  );
+    const buffer = Buffer.from(response.data);
+    const attachment = new AttachmentBuilder(buffer, { name: 'nsfw.gif' });
+
+    const embed = new EmbedBuilder()
+      .setColor(0xff0066)
+      .setTitle(media.title)
+      .setImage('attachment://nsfw.gif')
+      .setFooter({ text: `Requested by ${requester}` })
+      .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('load_more')
+        .setLabel('Load More')
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji('🔄')
+    );
+
+    return await channel.send({
+      embeds: [embed],
+      files: [attachment],
+      components: [row]
+    });
+  } catch (err) {
+    console.error('Send media error:', err.message);
+    // fallback: send link only
+    const embed = new EmbedBuilder()
+      .setColor(0xff0066)
+      .setTitle(media.title)
+      .setDescription(`[Click to view](${media.url})`)
+      .setFooter({ text: `Requested by ${requester}` });
+
+    return await channel.send({ embeds: [embed] });
+  }
 }
 
 client.on('ready', () => {
@@ -132,14 +158,9 @@ client.on('messageCreate', async (message) => {
       return message.reply('Failed to fetch media. Try again.');
     }
 
-    const embed = createEmbed(media, message.author.username);
-    const row = createRow();
+    const sentMessage = await sendMedia(message.channel, media, message.author.username);
 
-    const sentMessage = await message.channel.send({
-      embeds: [embed],
-      components: [row]
-    });
-
+    // Collector for Load More
     const collector = sentMessage.createMessageComponentCollector({
       componentType: ComponentType.Button,
       time: 180_000
@@ -155,26 +176,20 @@ client.on('messageCreate', async (message) => {
         return interaction.followUp({ content: 'Failed to load more.', ephemeral: true });
       }
 
-      const newEmbed = createEmbed(newMedia, message.author.username);
-      const newRow = createRow();
-
       // BAGONG MESSAGE every click
-      await message.channel.send({
-        embeds: [newEmbed],
-        components: [newRow]
-      });
+      await sendMedia(message.channel, newMedia, message.author.username);
     });
 
     collector.on('end', async () => {
-      const disabledRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('load_more')
-          .setLabel('Load More')
-          .setStyle(ButtonStyle.Primary)
-          .setEmoji('🔄')
-          .setDisabled(true)
-      );
       try {
+        const disabledRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('load_more')
+            .setLabel('Load More')
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji('🔄')
+            .setDisabled(true)
+        );
         await sentMessage.edit({ components: [disabledRow] });
       } catch (e) {}
     });
