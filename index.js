@@ -27,66 +27,51 @@ const COMMANDS = {
   sex: {
     title: 'Sex',
     sources: [
-      () => fetchNeko('pgif'),
-      () => fetchNeko('hentai'),
-      () => fetchPurr('fuck')
+      () => fetchPurr('fuck'),
+      () => fetchPurr('anal'),
+      () => fetchPurr('blowjob')
     ]
   },
   anal: {
     title: 'Anal',
     sources: [
-      () => fetchNeko('anal'),
-      () => fetchPurr('anal'),
-      () => fetchNeko('hentai_anal')
+      () => fetchPurr('anal')
     ]
   },
   blowjob: {
     title: 'Blowjob',
     sources: [
-      () => fetchNeko('blowjob'),
-      () => fetchPurr('blowjob'),
-      () => fetchNeko('pgif')
+      () => fetchPurr('blowjob')
     ]
   },
   hentai: {
     title: 'Hentai',
     sources: [
-      () => fetchNeko('hentai'),
-      () => fetchNeko('hentai_anal'),
-      () => fetchPurr('neko')
+      () => fetchPurr('neko'),
+      () => fetchPurr('fuck'),
+      () => fetchPurr('anal')
     ]
   },
   doggystyle: {
     title: 'Doggystyle',
     sources: [
-      () => fetchNeko('pgif'),
-      () => fetchNeko('anal'),
-      () => fetchPurr('fuck')
+      () => fetchPurr('fuck'),
+      () => fetchPurr('anal')
     ]
   }
 };
 
-async function fetchNeko(type) {
-  try {
-    const res = await axios.get(`https://nekobot.xyz/api/image?type=${type}`, {
-      timeout: 8000
-    });
-    if (res.data?.success && res.data.message) {
-      return res.data.message;
-    }
-  } catch (e) {}
-  return null;
-}
-
 async function fetchPurr(category) {
   try {
-    const res = await axios.get(`https://purrbot.site/api/img/nsfw/${category}/gif`, {
+    const res = await axios.get(`https://api.purrbot.site/v2/img/nsfw/${category}/gif`, {
       timeout: 8000
     });
     if (res.data?.link) {
       return res.data.link;
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error(`PurrBot error (${category}):`, e.message);
+  }
   return null;
 }
 
@@ -130,7 +115,9 @@ client.on('ready', () => {
 client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.content.startsWith(PREFIX)) return;
 
-  // Tinanggal na yung NSFW channel check
+  if (message.guild && !message.channel.nsfw) {
+    return message.reply('⚠️ This command only works in **NSFW channels**.');
+  }
 
   const args = message.content.slice(PREFIX.length).trim().toLowerCase().split(/ +/);
   const command = args[0];
@@ -153,10 +140,9 @@ client.on('messageCreate', async (message) => {
       components: [row]
     });
 
-    // Collector - every click = NEW message
     const collector = sentMessage.createMessageComponentCollector({
       componentType: ComponentType.Button,
-      time: 180_000 // 3 minutes
+      time: 180_000
     });
 
     collector.on('collect', async (interaction) => {
@@ -188,7 +174,6 @@ client.on('messageCreate', async (message) => {
           .setEmoji('🔄')
           .setDisabled(true)
       );
-
       try {
         await sentMessage.edit({ components: [disabledRow] });
       } catch (e) {}
